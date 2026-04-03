@@ -33,7 +33,7 @@ http.Handle("/", incidentary.Middleware(client, yourHandler))
 ```go
 status202 := 202
 client.RecordQueuePublish(incidentary.RecordEventOptions{
-	EventAttrs: map[string]interface{}{"topic": "payments.jobs"},
+ EventAttrs: map[string]interface{}{"topic": "payments.jobs"},
 })
 client.RecordQueueConsume(incidentary.RecordEventOptions{})
 client.RecordJobStart(incidentary.RecordEventOptions{ParentCeID: parentCeID})
@@ -46,7 +46,7 @@ Generic emitter:
 
 ```go
 client.RecordEvent(incidentary.EventJobStart, incidentary.RecordEventOptions{
-	EventAttrs: map[string]interface{}{"worker": "invoice-sync"},
+ EventAttrs: map[string]interface{}{"worker": "invoice-sync"},
 })
 ```
 
