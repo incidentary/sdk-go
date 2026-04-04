@@ -133,9 +133,11 @@ func (t *fakeTx) Commit() error   { return nil }
 func (t *fakeTx) Rollback() error { return nil }
 
 // drainEvents flushes and returns all buffered events from a client's ring buffer.
+// It uses the current timestamp so that recently written events (within the
+// 60-second ring-buffer window) are returned. Using a far-future "nowMs" would
+// push the cutoff forward and filter out all current events.
 func drainEvents(client *Client) []*SkeletonCe {
-	// Use a far-future timestamp so nothing is filtered by window age.
-	return client.buffer.Flush(time.Now().Add(time.Hour).UnixMilli())
+	return client.buffer.Flush(time.Now().UnixMilli())
 }
 
 // --- WrapConnector ---
