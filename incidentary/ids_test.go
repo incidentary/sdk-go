@@ -3,52 +3,44 @@ package incidentary
 import (
 	"regexp"
 	"testing"
-	"time"
 )
 
-var uuidv7Pattern = regexp.MustCompile(
-	`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`,
-)
-
+// Canonical UUIDv4 shape: version nibble '4' at index 14, RFC 4122
+// variant bits (8/9/a/b) at index 19.
 var uuidv4Pattern = regexp.MustCompile(
 	`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`,
 )
 
-func TestNewIDMatchesV7Pattern(t *testing.T) {
+func TestNewIDMatchesV4Pattern(t *testing.T) {
 	id := NewID()
-	if !uuidv7Pattern.MatchString(id) {
-		t.Fatalf("NewID() = %q, does not match v7 pattern", id)
+	if !uuidv4Pattern.MatchString(id) {
+		t.Fatalf("NewID() = %q, does not match v4 pattern", id)
 	}
 }
 
-func TestNewIDVersionNibbleIsSeven(t *testing.T) {
+func TestNewIDVersionNibbleIsFour(t *testing.T) {
+	// The whole point of unifying on v4: a future refactor that
+	// silently reinstates v7 must not slip through review. This
+	// test screams the moment the version nibble stops being '4'.
 	id := NewID()
-	// Canonical layout: chars at index 14 is the version nibble.
-	if id[14] != '7' {
-		t.Errorf("version nibble = %q, want '7'", string(id[14]))
+	if id[14] != '4' {
+		t.Errorf("version nibble = %q, want '4'", string(id[14]))
 	}
 }
 
 func TestNewIDVariantBitsAreRFC4122(t *testing.T) {
 	id := NewID()
-	// Index 19 is the variant nibble; RFC 4122 layouts are 8/9/a/b.
 	c := id[19]
 	if c != '8' && c != '9' && c != 'a' && c != 'b' {
 		t.Errorf("variant nibble = %q, want 8/9/a/b", string(c))
 	}
 }
 
-func TestNewIDIsTimeOrdered(t *testing.T) {
-	a := NewID()
-	time.Sleep(2 * time.Millisecond)
-	b := NewID()
-	if a >= b {
-		t.Errorf("expected a < b lexicographically: a=%q b=%q", a, b)
-	}
-}
-
-func TestNewIDIsUniqueWithinMillisecond(t *testing.T) {
-	const n = 256
+func TestNewIDDoesNotCollideAcrossManySamples(t *testing.T) {
+	// v4 has 122 random bits; collision across 4096 samples is
+	// effectively zero. A collision here proves the RNG is seeded
+	// or deterministic — a fatal bug for bearer-token use.
+	const n = 4096
 	seen := make(map[string]struct{}, n)
 	for i := 0; i < n; i++ {
 		id := NewID()
@@ -59,89 +51,43 @@ func TestNewIDIsUniqueWithinMillisecond(t *testing.T) {
 	}
 }
 
-func TestNewIDEncodesRecentTimestamp(t *testing.T) {
-	before := time.Now().UnixMilli()
-	id := NewID()
-	after := time.Now().UnixMilli()
-
-	// Strip dashes and parse the first 12 hex chars as uint64.
-	tsHex := id[0:8] + id[9:13]
-	var ts int64
-	for _, c := range tsHex {
-		ts <<= 4
+func TestNewIDIsNotSeriallyOrdered(t *testing.T) {
+	// v4 has no embedded timestamp, so two ids generated
+	// back-to-back must not have a systematic lexicographic
+	// relationship. Guards against a regression that reinstates
+	// a time-ordered generator.
+	//
+	// We sample 500 pairs; a<b and a>b should each land in roughly
+	// [150, 350] — well inside a 12σ envelope around 250/500.
+	var lt, gt int
+	for i := 0; i < 500; i++ {
+		a := NewID()
+		b := NewID()
 		switch {
-		case c >= '0' && c <= '9':
-			ts |= int64(c - '0')
-		case c >= 'a' && c <= 'f':
-			ts |= int64(c-'a') + 10
+		case a < b:
+			lt++
+		case a > b:
+			gt++
 		default:
-			t.Fatalf("unexpected hex char %q", string(c))
+			t.Fatalf("impossible collision at %d: %q", i, a)
 		}
 	}
-	if ts < before-5_000 || ts > after+5_000 {
-		t.Errorf("timestamp %d out of envelope [%d, %d]", ts, before, after)
+	if lt < 150 || lt > 350 {
+		t.Errorf("a<b happened %d/500 times — ordering is not uniform", lt)
+	}
+	if gt < 150 || gt > 350 {
+		t.Errorf("a>b happened %d/500 times — ordering is not uniform", gt)
 	}
 }
 
-func TestNewRandomTokenMatchesV4Pattern(t *testing.T) {
-	tok := NewRandomToken()
-	if !uuidv4Pattern.MatchString(tok) {
-		t.Fatalf("NewRandomToken() = %q, does not match v4 pattern", tok)
+func TestNewIDIsCanonical36Chars(t *testing.T) {
+	id := NewID()
+	if len(id) != 36 {
+		t.Fatalf("length = %d, want 36", len(id))
 	}
-}
-
-func TestNewRandomTokenVersionNibbleIsFour(t *testing.T) {
-	tok := NewRandomToken()
-	if tok[14] != '4' {
-		t.Errorf("version nibble = %q, want '4'", string(tok[14]))
-	}
-}
-
-func TestNewRandomTokenVariantBitsAreRFC4122(t *testing.T) {
-	tok := NewRandomToken()
-	c := tok[19]
-	if c != '8' && c != '9' && c != 'a' && c != 'b' {
-		t.Errorf("variant nibble = %q, want 8/9/a/b", string(c))
-	}
-}
-
-func TestNewRandomTokenNeverReusesV7Version(t *testing.T) {
-	for i := 0; i < 64; i++ {
-		tok := NewRandomToken()
-		if tok[14] == '7' {
-			t.Fatalf("iteration %d produced v7 layout: %q", i, tok)
+	for _, i := range []int{8, 13, 18, 23} {
+		if id[i] != '-' {
+			t.Errorf("expected '-' at index %d, got %q", i, string(id[i]))
 		}
-	}
-}
-
-func TestNewRandomTokenIsNotMonotonicByTime(t *testing.T) {
-	// Over 40 pairs we MUST see both orderings. An implementation
-	// that accidentally returned v7 would always satisfy a < b.
-	var sawAsc, sawDescOrEq bool
-	for i := 0; i < 40; i++ {
-		a := NewRandomToken()
-		time.Sleep(2 * time.Millisecond)
-		b := NewRandomToken()
-		if a < b {
-			sawAsc = true
-		} else {
-			sawDescOrEq = true
-		}
-		if sawAsc && sawDescOrEq {
-			return
-		}
-	}
-	t.Fatalf("v4 tokens must not be monotonic by generation time")
-}
-
-func TestNewRandomTokenIsUniqueAcrossManyCalls(t *testing.T) {
-	const n = 512
-	seen := make(map[string]struct{}, n)
-	for i := 0; i < n; i++ {
-		tok := NewRandomToken()
-		if _, dup := seen[tok]; dup {
-			t.Fatalf("duplicate token at iteration %d: %q", i, tok)
-		}
-		seen[tok] = struct{}{}
 	}
 }

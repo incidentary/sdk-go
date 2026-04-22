@@ -1,81 +1,50 @@
 package incidentary
 
-// Identifier generators for the Incidentary Go SDK.
+// Canonical UUIDv4 id generator for the Incidentary Go SDK.
 //
-// Exposes two functions with a deliberate split:
+// UUIDv4 (RFC 9562 §5.4) is 122 bits of CSPRNG random with no
+// embedded timestamp. The server accepts v1/v4/v7 transparently —
+// the binary representation is identical across versions — but all
+// first-party SDKs emit v4.
 //
-//	NewID           — UUIDv7 (RFC 9562 §5.7) for DB-backed identifiers
-//	                  (trace IDs, CE IDs, anywhere sort-key locality
-//	                  matters). The 48-bit millisecond prefix improves
-//	                  B-tree locality on hot ingest paths.
-//	NewRandomToken  — UUIDv4 for externally visible, privacy-sensitive
-//	                  tokens where the timestamp embedded in v7 would
-//	                  leak creation time across a trust boundary.
+// Earlier drafts of this helper emitted UUIDv7 on the grounds that
+// the 48-bit millisecond prefix would improve server-side storage
+// locality. That reasoning was wrong for the Incidentary server
+// schema:
 //
-// Both share the 128-bit UUID layout, so either form slots into a
-// `uuid` column transparently.
+//   - ClickHouse compares UUIDs second-half-first for historical
+//     reasons, so v7's timestamp prefix contributes nothing to
+//     sparse-index ordering or pruning.
+//   - Every UUID-bearing ClickHouse table already carries time
+//     locality in an explicit i64 nanosecond column (wall_ts_ns /
+//     occurred_at) that sits *before* the UUID in the sort key.
+//
+// With the storage-locality case empty, the remaining consideration
+// is v7's 48-bit timestamp prefix — a recoverable creation-time side
+// channel for any value that might cross a trust boundary. v4 has no
+// such leak.
 
 import (
 	"crypto/rand"
 	"encoding/hex"
 	"strings"
-	"time"
 )
 
-// NewID returns a canonical UUIDv7 string.
+// NewID returns a canonical UUIDv4 string (RFC 9562 §5.4): 36 chars,
+// four hyphens, version nibble '4', RFC 4122 variant bits.
 //
-// Format:
-//
-//	48 bits: Unix-epoch milliseconds (big-endian)
-//	 4 bits: version = 7
-//	12 bits: rand_a
-//	 2 bits: variant = 10 (RFC 4122)
-//	62 bits: rand_b
-//
-// Falls back silently to zero-random on an rand.Read failure rather
-// than panicking — unique-but-predictable IDs are preferable to a
-// crashed SDK in a degenerate crypto state.
+// Randomness is sourced from crypto/rand (OS CSPRNG). Falls back
+// silently to zero-random on an rand.Read failure rather than
+// panicking — a degenerate-but-unique ID is preferable to a crashed
+// SDK when the caller is trying to capture an incident.
 func NewID() string {
-	var buf [16]byte
-	_, _ = rand.Read(buf[:])
-
-	ms := time.Now().UnixMilli()
-	// 48 bits of timestamp, big-endian, into buf[0..6].
-	buf[0] = byte(ms >> 40)
-	buf[1] = byte(ms >> 32)
-	buf[2] = byte(ms >> 24)
-	buf[3] = byte(ms >> 16)
-	buf[4] = byte(ms >> 8)
-	buf[5] = byte(ms)
-
-	// Version = 7 in the top 4 bits of byte 6.
-	buf[6] = (buf[6] & 0x0F) | 0x70
-
-	// Variant = 10 in the top 2 bits of byte 8.
-	buf[8] = (buf[8] & 0x3F) | 0x80
-
-	hexv := hex.EncodeToString(buf[:])
-	parts := []string{hexv[0:8], hexv[8:12], hexv[12:16], hexv[16:20], hexv[20:32]}
-	return strings.Join(parts, "-")
-}
-
-// NewRandomToken returns a canonical UUIDv4 string — 122 bits of
-// CSPRNG output with no embedded timestamp. Use this for externally
-// visible tokens (deploy dedup keys, share-URL slugs, CSRF nonces)
-// where the millisecond prefix that v7 embeds would leak the token's
-// creation time across a trust boundary.
-//
-// Falls back silently to zero-random on an rand.Read failure rather
-// than panicking — unique-but-predictable tokens are preferable to a
-// crashed SDK in a degenerate crypto state. Callers that need hard
-// failure on a CSPRNG outage should bring their own generator.
-func NewRandomToken() string {
 	var buf [16]byte
 	_, _ = rand.Read(buf[:])
 
 	// Version = 4 in the top 4 bits of byte 6.
 	buf[6] = (buf[6] & 0x0F) | 0x40
-	// Variant = 10 in the top 2 bits of byte 8.
+
+	// Variant = 10 (RFC 4122) in the top 2 bits of byte 8.
 	buf[8] = (buf[8] & 0x3F) | 0x80
 
 	hexv := hex.EncodeToString(buf[:])
