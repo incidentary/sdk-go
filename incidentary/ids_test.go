@@ -10,6 +10,10 @@ var uuidv7Pattern = regexp.MustCompile(
 	`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`,
 )
 
+var uuidv4Pattern = regexp.MustCompile(
+	`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`,
+)
+
 func TestNewIDMatchesV7Pattern(t *testing.T) {
 	id := NewID()
 	if !uuidv7Pattern.MatchString(id) {
@@ -76,5 +80,68 @@ func TestNewIDEncodesRecentTimestamp(t *testing.T) {
 	}
 	if ts < before-5_000 || ts > after+5_000 {
 		t.Errorf("timestamp %d out of envelope [%d, %d]", ts, before, after)
+	}
+}
+
+func TestNewRandomTokenMatchesV4Pattern(t *testing.T) {
+	tok := NewRandomToken()
+	if !uuidv4Pattern.MatchString(tok) {
+		t.Fatalf("NewRandomToken() = %q, does not match v4 pattern", tok)
+	}
+}
+
+func TestNewRandomTokenVersionNibbleIsFour(t *testing.T) {
+	tok := NewRandomToken()
+	if tok[14] != '4' {
+		t.Errorf("version nibble = %q, want '4'", string(tok[14]))
+	}
+}
+
+func TestNewRandomTokenVariantBitsAreRFC4122(t *testing.T) {
+	tok := NewRandomToken()
+	c := tok[19]
+	if c != '8' && c != '9' && c != 'a' && c != 'b' {
+		t.Errorf("variant nibble = %q, want 8/9/a/b", string(c))
+	}
+}
+
+func TestNewRandomTokenNeverReusesV7Version(t *testing.T) {
+	for i := 0; i < 64; i++ {
+		tok := NewRandomToken()
+		if tok[14] == '7' {
+			t.Fatalf("iteration %d produced v7 layout: %q", i, tok)
+		}
+	}
+}
+
+func TestNewRandomTokenIsNotMonotonicByTime(t *testing.T) {
+	// Over 40 pairs we MUST see both orderings. An implementation
+	// that accidentally returned v7 would always satisfy a < b.
+	var sawAsc, sawDescOrEq bool
+	for i := 0; i < 40; i++ {
+		a := NewRandomToken()
+		time.Sleep(2 * time.Millisecond)
+		b := NewRandomToken()
+		if a < b {
+			sawAsc = true
+		} else {
+			sawDescOrEq = true
+		}
+		if sawAsc && sawDescOrEq {
+			return
+		}
+	}
+	t.Fatalf("v4 tokens must not be monotonic by generation time")
+}
+
+func TestNewRandomTokenIsUniqueAcrossManyCalls(t *testing.T) {
+	const n = 512
+	seen := make(map[string]struct{}, n)
+	for i := 0; i < n; i++ {
+		tok := NewRandomToken()
+		if _, dup := seen[tok]; dup {
+			t.Fatalf("duplicate token at iteration %d: %q", i, tok)
+		}
+		seen[tok] = struct{}{}
 	}
 }
