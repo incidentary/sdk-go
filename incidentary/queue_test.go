@@ -240,8 +240,8 @@ func TestWrapQueueConsumerRecordsNonZeroStatusOnHandlerError(t *testing.T) {
 	if last.Kind != KindQueueConsume {
 		t.Fatalf("expected QUEUE_CONSUME kind, got %q", last.Kind)
 	}
-	if last.Status != 500 {
-		t.Fatalf("expected status 500 on error, got %d", last.Status)
+	if last.StatusCode != 500 {
+		t.Fatalf("expected status 500 on error, got %d", last.StatusCode)
 	}
 }
 
@@ -331,8 +331,8 @@ func TestRecordQueueConsumeRecordsCorrectEventWithoutError(t *testing.T) {
 	if last.TraceID != "con-trace" {
 		t.Fatalf("expected traceID 'con-trace', got %q", last.TraceID)
 	}
-	if last.Status != 0 {
-		t.Fatalf("expected status 0 on success, got %d", last.Status)
+	if last.StatusCode != 0 {
+		t.Fatalf("expected status 0 on success, got %d", last.StatusCode)
 	}
 }
 
@@ -349,8 +349,8 @@ func TestRecordQueueConsumeRecordsErrorStatus(t *testing.T) {
 	}
 
 	last := events[len(events)-1]
-	if last.Status != 500 {
-		t.Fatalf("expected status 500 on error, got %d", last.Status)
+	if last.StatusCode != 500 {
+		t.Fatalf("expected status 500 on error, got %d", last.StatusCode)
 	}
 }
 

@@ -345,8 +345,8 @@ func TestInstrumentedStmtExecErrorRecordsStatus500(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event even on Exec error")
 	}
-	if events[len(events)-1].Status != 500 {
-		t.Fatalf("expected status 500 on exec error, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 500 {
+		t.Fatalf("expected status 500 on exec error, got %d", events[len(events)-1].StatusCode)
 	}
 }
 
@@ -373,8 +373,8 @@ func TestInstrumentedStmtQueryErrorRecordsStatus500(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event even on Query error")
 	}
-	if events[len(events)-1].Status != 500 {
-		t.Fatalf("expected status 500 on query error, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 500 {
+		t.Fatalf("expected status 500 on query error, got %d", events[len(events)-1].StatusCode)
 	}
 }
 
@@ -432,8 +432,8 @@ func TestQueryerContextErrorRecordsStatus500(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event even on QueryContext error")
 	}
-	if events[len(events)-1].Status != 500 {
-		t.Fatalf("expected status 500, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 500 {
+		t.Fatalf("expected status 500, got %d", events[len(events)-1].StatusCode)
 	}
 }
 
@@ -491,8 +491,8 @@ func TestExecerContextErrorRecordsStatus500(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event even on ExecContext error")
 	}
-	if events[len(events)-1].Status != 500 {
-		t.Fatalf("expected status 500, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 500 {
+		t.Fatalf("expected status 500, got %d", events[len(events)-1].StatusCode)
 	}
 }
 
@@ -520,8 +520,8 @@ func TestRecordDBQueryRecordsCorrectKindAndEventType(t *testing.T) {
 	}
 
 	ce := events[len(events)-1]
-	if ce.Kind != KindInternal {
-		t.Fatalf("expected kind %q, got %q", KindInternal, ce.Kind)
+	if ce.Kind != KindDBQuery {
+		t.Fatalf("expected kind %q, got %q", KindDBQuery, ce.Kind)
 	}
 	if ce.EventType != string(EventDBQuery) {
 		t.Fatalf("expected event_type %q, got %q", EventDBQuery, ce.EventType)
@@ -542,8 +542,8 @@ func TestRecordDBQuerySetsStatus500OnError(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event to be recorded")
 	}
-	if events[len(events)-1].Status != 500 {
-		t.Fatalf("expected status 500, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 500 {
+		t.Fatalf("expected status 500, got %d", events[len(events)-1].StatusCode)
 	}
 }
 
@@ -555,8 +555,8 @@ func TestRecordDBQuerySetsStatus0OnSuccess(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event to be recorded")
 	}
-	if events[len(events)-1].Status != 0 {
-		t.Fatalf("expected status 0, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 0 {
+		t.Fatalf("expected status 0, got %d", events[len(events)-1].StatusCode)
 	}
 }
 

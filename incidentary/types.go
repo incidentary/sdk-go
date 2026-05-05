@@ -3,7 +3,12 @@ package incidentary
 const (
 	TraceIDHeader    = "x-incidentary-trace-id"
 	ParentCeHeader   = "x-incidentary-parent-ce"
-	SDKVersionHeader = "X-Incidentary-SDK-Version"
+	AgentVersionHeader = "X-Incidentary-Agent-Version"
+
+	// SDKVersionHeader is kept as an alias for backward compatibility with
+	// any user code that references the old constant name. It points to the
+	// new V2 header value so the wire format is correct.
+	SDKVersionHeader = AgentVersionHeader
 )
 
 type CaptureMode string
@@ -24,18 +29,27 @@ const (
 type CeKind string
 
 const (
-	KindHTTPIn       CeKind = "HTTP_IN"
-	KindHTTPOut      CeKind = "HTTP_OUT"
+	KindHTTPServer   CeKind = "HTTP_SERVER"
+	KindHTTPClient   CeKind = "HTTP_CLIENT"
 	KindQueuePublish CeKind = "QUEUE_PUBLISH"
 	KindQueueConsume CeKind = "QUEUE_CONSUME"
+	KindDBQuery      CeKind = "DB_QUERY"
+	KindDBConnect    CeKind = "DB_CONNECT"
+	KindRPCServer    CeKind = "RPC_SERVER"
+	KindRPCClient    CeKind = "RPC_CLIENT"
+	KindJob          CeKind = "JOB"
 	KindInternal     CeKind = "INTERNAL"
+
+	// Backward-compatible aliases so the public API does not break.
+	KindHTTPIn  = KindHTTPServer
+	KindHTTPOut = KindHTTPClient
 )
 
 type IncidentaryEventType string
 
 const (
-	EventHTTPIn       IncidentaryEventType = "http_in"
-	EventHTTPOut      IncidentaryEventType = "http_out"
+	EventHTTPServer   IncidentaryEventType = "http_server"
+	EventHTTPClient   IncidentaryEventType = "http_client"
 	EventQueuePublish IncidentaryEventType = "queue_publish"
 	EventQueueConsume IncidentaryEventType = "queue_consume"
 	EventJobStart     IncidentaryEventType = "job_start"
@@ -44,8 +58,14 @@ const (
 	EventWebhookOut   IncidentaryEventType = "webhook_out"
 	EventInternalTask IncidentaryEventType = "internal_task"
 	EventDBQuery      IncidentaryEventType = "db_query"
-	EventGRPCIn       IncidentaryEventType = "grpc_in"
-	EventGRPCOut      IncidentaryEventType = "grpc_out"
+	EventGRPCServer   IncidentaryEventType = "grpc_server"
+	EventGRPCClient   IncidentaryEventType = "grpc_client"
+
+	// Backward-compatible aliases so the public API does not break.
+	EventHTTPIn  = EventHTTPServer
+	EventHTTPOut = EventHTTPClient
+	EventGRPCIn  = EventGRPCServer
+	EventGRPCOut = EventGRPCClient
 )
 
 // CeDetail is optional richer event detail attached in PRE_ARMED/INCIDENT modes.
@@ -65,21 +85,30 @@ type CeDetail struct {
 
 // SkeletonCe is the minimal causal event captured in the ring buffer.
 type SkeletonCe struct {
-	CeID       string    `json:"ce_id"`
+	CeID       string    `json:"id"`
 	TraceID    string    `json:"trace_id"`
-	ParentCeID string    `json:"parent_ce_id,omitempty"` // empty = no parent
+	ParentCeID string    `json:"parent_id,omitempty"` // empty = no parent
 	ServiceID  string    `json:"service_id"`
-	WallTsNs   int64     `json:"wall_ts_ns"`
+	WallTsNs   int64     `json:"occurred_at"`
 	CapturedBeforeAlert *bool    `json:"captured_before_alert,omitempty"`
 	RingBufferSeq       *int64   `json:"ring_buffer_seq,omitempty"`
 	Kind       CeKind    `json:"kind"`
 	EventType  string    `json:"event_type,omitempty"`
-	EventClass string    `json:"event_class,omitempty"`
-	EventAttrs any       `json:"event_attrs,omitempty"`
-	Status     int       `json:"status"`
+	Severity   *string   `json:"severity,omitempty"`
+	SpanID     *string   `json:"span_id,omitempty"`
+	Type       *string   `json:"type,omitempty"`
+	Attributes any       `json:"attributes,omitempty"`
+	StatusCode int       `json:"status_code"`
 	DurationNs int64     `json:"duration_ns"`
-	SdkVersion string    `json:"sdk_version"`
 	Detail     *CeDetail `json:"detail,omitempty"`
+}
+
+// FlushResult is returned by the transport's onFlush callback after a
+// successful upload. It carries the round-trip latency and any server-side
+// capture mode signal without mutating transport state.
+type FlushResult struct {
+	LatencyMs            float64
+	RequestedCaptureMode string // empty if header absent, e.g. "FULL"
 }
 
 type RecordRequestOptions struct {

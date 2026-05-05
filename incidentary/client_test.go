@@ -170,8 +170,8 @@ func TestRecordEventUsesCustomStatus(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event")
 	}
-	if events[len(events)-1].Status != 201 {
-		t.Fatalf("expected status 201, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 201 {
+		t.Fatalf("expected status 201, got %d", events[len(events)-1].StatusCode)
 	}
 }
 
@@ -183,8 +183,8 @@ func TestRecordEventSetsHTTPInDefaultStatus200(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event")
 	}
-	if events[len(events)-1].Status != 200 {
-		t.Fatalf("expected default status 200 for http_in, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 200 {
+		t.Fatalf("expected default status 200 for http_in, got %d", events[len(events)-1].StatusCode)
 	}
 }
 
@@ -196,8 +196,8 @@ func TestRecordEventSetsJobDefaultStatus0(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event")
 	}
-	if events[len(events)-1].Status != 0 {
-		t.Fatalf("expected default status 0 for job_start, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 0 {
+		t.Fatalf("expected default status 0 for job_start, got %d", events[len(events)-1].StatusCode)
 	}
 }
 
@@ -226,8 +226,8 @@ func TestRecordEventAttachesEventAttrs(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event")
 	}
-	if events[len(events)-1].EventAttrs == nil {
-		t.Fatal("expected EventAttrs to be set")
+	if events[len(events)-1].Attributes == nil {
+		t.Fatal("expected Attributes to be set")
 	}
 }
 

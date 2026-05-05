@@ -113,8 +113,8 @@ func TestWrapTransportRecordsResponseStatus(t *testing.T) {
 	}
 
 	last := events[len(events)-1]
-	if last.Status != http.StatusTeapot {
-		t.Fatalf("expected status 418, got %d", last.Status)
+	if last.StatusCode != http.StatusTeapot {
+		t.Fatalf("expected status 418, got %d", last.StatusCode)
 	}
 	if last.Kind != KindHTTPOut {
 		t.Fatalf("expected kind HTTP_OUT, got %s", last.Kind)
@@ -153,8 +153,8 @@ func TestWrapTransportRecordsStatusZeroOnError(t *testing.T) {
 	}
 
 	last := events[len(events)-1]
-	if last.Status != 0 {
-		t.Fatalf("expected status 0 on error, got %d", last.Status)
+	if last.StatusCode != 0 {
+		t.Fatalf("expected status 0 on error, got %d", last.StatusCode)
 	}
 }
 

@@ -80,10 +80,8 @@ func Middleware(client *Client, next http.Handler) http.Handler {
 				WallTsNs:   time.Now().UnixNano(),
 				Kind:       KindHTTPIn,
 				EventType:  string(EventHTTPIn),
-				EventClass: "causal",
-				Status:     rw.status,
+				StatusCode: rw.status,
 				DurationNs: durationNs,
-				SdkVersion: "0.2.0",
 			}
 		detail := buildInboundDetail(client, r, rw)
 		ce = client.AttachDetailToEvent(ce, detail)
@@ -179,10 +177,8 @@ func InstrumentedDo(
 				WallTsNs:   time.Now().UnixNano(),
 				Kind:       KindHTTPOut,
 				EventType:  string(EventHTTPOut),
-				EventClass: "causal",
-				Status:     status,
+				StatusCode: status,
 				DurationNs: durationNs,
-				SdkVersion: "0.2.0",
 			}
 		detail := buildOutboundDetail(client, clonedReq, responseHeaders, resolution, metadata, explicitRetry, cancelled, timedOut)
 		ce = client.AttachDetailToEvent(ce, detail)

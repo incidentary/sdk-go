@@ -57,10 +57,8 @@ func (t *instrumentedTransport) RoundTrip(req *http.Request) (*http.Response, er
 		WallTsNs:   time.Now().UnixNano(),
 		Kind:       KindHTTPOut,
 		EventType:  string(EventHTTPOut),
-		EventClass: "causal",
-		Status:     status,
+		StatusCode: status,
 		DurationNs: durationNs,
-		SdkVersion: sdkVersion,
 	}
 	t.client.WriteEvent(ce)
 

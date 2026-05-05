@@ -11,27 +11,35 @@ import (
 )
 
 const (
-	sdkVersion       = "0.2.0"
-	sdkSchemaVersion = "1"
+	sdkVersion = "1.0.0"
 )
 
 type ceBatch struct {
-	SchemaVersion string            `json:"schema_version"`
-	WorkspaceID   string            `json:"workspace_id"`
-	ServiceID     string            `json:"service_id"`
-	Environment   string            `json:"environment"`
-	FlushedAt     int64             `json:"flushed_at"`
-	CaptureMode   IngestCaptureMode `json:"capture_mode"`
-	Events        []*SkeletonCe     `json:"events"`
-	SDKTelemetry  sdkTelemetry      `json:"sdk_telemetry"`
+	SpecVersion string            `json:"specversion"`
+	Resource    batchResource     `json:"resource"`
+	Agent       batchAgent        `json:"agent"`
+	FlushedAt   int64             `json:"flushed_at"`
+	CaptureMode IngestCaptureMode `json:"capture_mode"`
+	Events      []*SkeletonCe     `json:"events"`
 }
 
-type sdkTelemetry struct {
-	SDKVersion     string `json:"sdk_version"`
-	SDKLanguage    string `json:"sdk_language"`
-	QueueDepth     int    `json:"queue_depth"`
-	DroppedCEs     int    `json:"dropped_ce_count"`
-	FlushLatencyMs int64  `json:"flush_latency_ms"`
+type batchResource struct {
+	ServiceName string `json:"service.name"`
+	Environment string `json:"deployment.environment"`
+}
+
+type batchAgent struct {
+	Type        string                 `json:"type"`
+	Version     string                 `json:"version"`
+	Language    string                 `json:"language"`
+	WorkspaceID string                 `json:"workspace_id"`
+	Telemetry   map[string]interface{} `json:"telemetry,omitempty"`
+}
+
+type ingestResponse struct {
+	Accepted    int               `json:"accepted"`
+	Dropped     int               `json:"dropped"`
+	DropReasons map[string]int    `json:"drop_reasons,omitempty"`
 }
 
 // Transport is a fail-open background uploader.
@@ -75,43 +83,55 @@ func (t *Transport) UploadBatch(events []*SkeletonCe) {
 }
 
 func (t *Transport) UploadBatchWithMode(events []*SkeletonCe, mode CaptureMode, incidentID string) {
+	t.UploadBatchWithModeAndTelemetry(events, mode, incidentID, nil, nil)
+}
+
+// UploadBatchWithModeAndTelemetry uploads a batch with optional agent telemetry
+// and an optional callback invoked with a FlushResult on successful upload.
+// The FlushResult carries round-trip latency and any server-requested capture
+// mode (from the X-Capture-Mode-Requested response header).
+func (t *Transport) UploadBatchWithModeAndTelemetry(events []*SkeletonCe, mode CaptureMode, incidentID string, telemetry map[string]interface{}, onFlush func(FlushResult)) {
 	defer func() { _ = recover() }()
 	if len(events) == 0 || !t.canAttemptRequest() {
 		return
 	}
 
+	agent := batchAgent{
+		Type:        "sdk",
+		Version:     sdkVersion,
+		Language:    "go",
+		WorkspaceID: t.workspaceID,
+		Telemetry:   telemetry,
+	}
+
 	body, err := json.Marshal(ceBatch{
-		SchemaVersion: sdkSchemaVersion,
-		WorkspaceID:   t.workspaceID,
-		ServiceID:     t.serviceName,
-		Environment:   t.environment,
-		FlushedAt:     time.Now().UnixNano(),
-		CaptureMode:   toIngestCaptureMode(mode),
-		Events:        events,
-		SDKTelemetry: sdkTelemetry{
-			SDKVersion:     sdkVersion,
-			SDKLanguage:    "go",
-			QueueDepth:     0,
-			DroppedCEs:     0,
-			FlushLatencyMs: 0,
+		SpecVersion: "2",
+		Resource: batchResource{
+			ServiceName: t.serviceName,
+			Environment: t.environment,
 		},
+		Agent:       agent,
+		FlushedAt:   time.Now().UnixNano(),
+		CaptureMode: toIngestCaptureMode(mode),
+		Events:      events,
 	})
 	if err != nil {
 		return
 	}
 
 	go func() {
+		flushStart := time.Now()
 		client := &http.Client{Timeout: time.Duration(t.timeoutMs) * time.Millisecond}
 		delays := []time.Duration{1 * time.Second, 4 * time.Second, 16 * time.Second}
 
 		for attempt := 0; attempt <= len(delays); attempt++ {
-			resp, reqErr := t.doJSONRequest(client, "/api/v1/ingest/batch", body, incidentID)
+			resp, reqErr := t.doJSONRequest(client, "/api/v2/ingest", body, incidentID)
 			if reqErr == nil && resp != nil {
 				data, _ := io.ReadAll(resp.Body)
 				resp.Body.Close()
 				if resp.StatusCode == http.StatusUpgradeRequired {
 					log.Printf(
-						`{"event":"incidentary_sdk_version_rejected","status":426,"payload":%q}`,
+						`{"event":"incidentary_agent_version_rejected","status":426,"payload":%q}`,
 						string(data),
 					)
 					t.onSuccess()
@@ -121,7 +141,19 @@ func (t *Transport) UploadBatchWithMode(events []*SkeletonCe, mode CaptureMode, 
 					return
 				}
 				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+					t.parseIngestResponse(data)
+					capMode := resp.Header.Get("X-Capture-Mode-Requested")
+					if capMode != "" {
+						log.Printf(`{"event":"incidentary_capture_mode_requested","mode":%q}`, capMode)
+					}
 					t.onSuccess()
+					if onFlush != nil {
+						latencyMs := float64(time.Since(flushStart).Microseconds()) / 1000.0
+						onFlush(FlushResult{
+							LatencyMs:            latencyMs,
+							RequestedCaptureMode: capMode,
+						})
+					}
 					return
 				}
 			}
@@ -212,8 +244,8 @@ func (t *Transport) doJSONRequest(client *http.Client, path string, body []byte,
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+t.apiKey)
-	if path == "/api/v1/ingest/batch" {
-		req.Header.Set(SDKVersionHeader, sdkVersion)
+	if path == "/api/v2/ingest" {
+		req.Header.Set(AgentVersionHeader, sdkVersion)
 		if stringsTrim(incidentID) != "" {
 			req.Header.Set("X-Incidentary-Incident-Id", incidentID)
 		}
@@ -302,6 +334,24 @@ func (t *Transport) pauseOnFreeCELimit(body []byte) bool {
 		}()
 	}
 	return true
+}
+
+func (t *Transport) parseIngestResponse(data []byte) {
+	var resp ingestResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return
+	}
+	if resp.Dropped > 0 {
+		encoded, err := json.Marshal(map[string]interface{}{
+			"event":        "incidentary_events_dropped",
+			"dropped":      resp.Dropped,
+			"accepted":     resp.Accepted,
+			"drop_reasons": resp.DropReasons,
+		})
+		if err == nil {
+			log.Print(string(encoded))
+		}
+	}
 }
 
 func nextUTCMonthStart(now time.Time) time.Time {

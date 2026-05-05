@@ -187,17 +187,15 @@ func recordDBQuery(client *Client, ctx context.Context, operation string, query 
 		ParentCeID: parentCe,
 		ServiceID:  client.ServiceName,
 		WallTsNs:   startTime.UnixNano(),
-		Kind:       KindInternal,
+		Kind:       KindDBQuery,
 		EventType:  string(EventDBQuery),
-		EventClass: "causal",
-		Status:     status,
+		StatusCode: status,
 		DurationNs: duration.Nanoseconds(),
-		SdkVersion: sdkVersion,
 	}
 
 	if operation != "" || query != "" {
 		q := truncateQuery(query)
-		ce.EventAttrs = map[string]interface{}{
+		ce.Attributes = map[string]interface{}{
 			"operation": operation,
 			"query":     q,
 		}

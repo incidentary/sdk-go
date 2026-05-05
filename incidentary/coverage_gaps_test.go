@@ -433,9 +433,9 @@ func TestEventTypeToKindForAllTypes(t *testing.T) {
 		{EventGRPCOut, KindHTTPOut},
 		{EventQueuePublish, KindQueuePublish},
 		{EventQueueConsume, KindQueueConsume},
-		{EventDBQuery, KindInternal},
-		{EventJobStart, KindInternal},
-		{EventJobEnd, KindInternal},
+		{EventDBQuery, KindDBQuery},
+		{EventJobStart, KindJob},
+		{EventJobEnd, KindJob},
 		{EventInternalTask, KindInternal},
 		{"unknown_type", KindInternal},
 	}
@@ -524,9 +524,9 @@ func TestRecordGRPCCallRecordsMethodInEventAttrs(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event")
 	}
-	attrs, ok := events[len(events)-1].EventAttrs.(map[string]interface{})
+	attrs, ok := events[len(events)-1].Attributes.(map[string]interface{})
 	if !ok || attrs["method"] != "/UserService/GetUser" {
-		t.Fatalf("expected method '/UserService/GetUser' in EventAttrs, got %v", events[len(events)-1].EventAttrs)
+		t.Fatalf("expected method '/UserService/GetUser' in EventAttrs, got %v", events[len(events)-1].Attributes)
 	}
 }
 
@@ -538,7 +538,7 @@ func TestRecordGRPCCallWithEmptyMethodNoEventAttrs(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event")
 	}
-	if events[len(events)-1].EventAttrs != nil {
+	if events[len(events)-1].Attributes != nil {
 		t.Fatal("expected nil EventAttrs when method is empty")
 	}
 }
@@ -553,9 +553,9 @@ func TestRecordDBQueryAttrsContainOperationAndQuery(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event")
 	}
-	attrs, ok := events[len(events)-1].EventAttrs.(map[string]interface{})
+	attrs, ok := events[len(events)-1].Attributes.(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected EventAttrs to be map[string]interface{}, got %T", events[len(events)-1].EventAttrs)
+		t.Fatalf("expected EventAttrs to be map[string]interface{}, got %T", events[len(events)-1].Attributes)
 	}
 	if attrs["operation"] != "query" {
 		t.Fatalf("expected operation 'query', got %v", attrs["operation"])
@@ -573,7 +573,7 @@ func TestRecordDBQueryWithEmptyOperationAndQueryNoAttrs(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event")
 	}
-	if events[len(events)-1].EventAttrs != nil {
+	if events[len(events)-1].Attributes != nil {
 		t.Fatal("expected nil EventAttrs for empty operation and query")
 	}
 }

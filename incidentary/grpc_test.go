@@ -196,8 +196,8 @@ func TestRecordGRPCCallSetsStatus500OnError(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event to be recorded")
 	}
-	if events[len(events)-1].Status != 500 {
-		t.Fatalf("expected status 500, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 500 {
+		t.Fatalf("expected status 500, got %d", events[len(events)-1].StatusCode)
 	}
 }
 
@@ -209,8 +209,8 @@ func TestRecordGRPCCallSetsStatus0OnSuccess(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event to be recorded")
 	}
-	if events[len(events)-1].Status != 0 {
-		t.Fatalf("expected status 0, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 0 {
+		t.Fatalf("expected status 0, got %d", events[len(events)-1].StatusCode)
 	}
 }
 
@@ -322,8 +322,8 @@ func TestWrapGRPCHandlerErrorRecordsStatus500(t *testing.T) {
 	if len(events) == 0 {
 		t.Fatal("expected event from WrapGRPCHandler on error")
 	}
-	if events[len(events)-1].Status != 500 {
-		t.Fatalf("expected status 500, got %d", events[len(events)-1].Status)
+	if events[len(events)-1].StatusCode != 500 {
+		t.Fatalf("expected status 500, got %d", events[len(events)-1].StatusCode)
 	}
 }
 

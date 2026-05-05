@@ -309,10 +309,10 @@ func TestUploadBatchSetsAuthorizationHeader(t *testing.T) {
 	}
 }
 
-func TestUploadBatchSetsSDKVersionHeader(t *testing.T) {
+func TestUploadBatchSetsAgentVersionHeader(t *testing.T) {
 	versionCh := make(chan string, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		versionCh <- r.Header.Get(SDKVersionHeader)
+		versionCh <- r.Header.Get(AgentVersionHeader)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -323,10 +323,10 @@ func TestUploadBatchSetsSDKVersionHeader(t *testing.T) {
 	select {
 	case gotVersion := <-versionCh:
 		if gotVersion != sdkVersion {
-			t.Fatalf("expected SDK version header %q, got %q", sdkVersion, gotVersion)
+			t.Fatalf("expected agent version header %q, got %q", sdkVersion, gotVersion)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for SDK version header")
+		t.Fatal("timed out waiting for agent version header")
 	}
 }
 

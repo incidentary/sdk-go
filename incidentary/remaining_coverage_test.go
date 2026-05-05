@@ -782,7 +782,7 @@ func TestCanAttemptRequestReturnsFalseWhenQuotaActive(t *testing.T) {
 
 func TestDoJSONRequestReturnsNilWhenNoBaseURL(t *testing.T) {
 	tr := NewTransport("", "key", "svc", "prod", 5_000, nil)
-	resp, err := tr.doJSONRequest(&http.Client{}, "/api/v1/ingest/batch", []byte(`{}`), "")
+	resp, err := tr.doJSONRequest(&http.Client{}, "/api/v2/ingest", []byte(`{}`), "")
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -801,7 +801,7 @@ func TestDoJSONRequestSetsIncidentIDHeaderWhenProvided(t *testing.T) {
 
 	tr := NewTransport(server.URL, "key", "svc", "prod", 5_000, nil)
 	httpClient := &http.Client{Timeout: 2 * time.Second}
-	resp, err := tr.doJSONRequest(httpClient, "/api/v1/ingest/batch", []byte(`{}`), "incident-123")
+	resp, err := tr.doJSONRequest(httpClient, "/api/v2/ingest", []byte(`{}`), "incident-123")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -930,8 +930,8 @@ func TestRecordGRPCCallWithErrorSetsStatus500(t *testing.T) {
 		t.Fatal("expected event from RecordGRPCCall with error")
 	}
 	last := events[len(events)-1]
-	if last.Status != 500 {
-		t.Fatalf("expected status 500 for gRPC error, got %d", last.Status)
+	if last.StatusCode != 500 {
+		t.Fatalf("expected status 500 for gRPC error, got %d", last.StatusCode)
 	}
 }
 
@@ -967,8 +967,8 @@ func TestRecordQueueConsumeWithErrorSetsStatus500(t *testing.T) {
 		t.Fatal("expected event from RecordQueueConsume with error")
 	}
 	last := events[len(events)-1]
-	if last.Status != 500 {
-		t.Fatalf("expected status 500 for queue consume error, got %d", last.Status)
+	if last.StatusCode != 500 {
+		t.Fatalf("expected status 500 for queue consume error, got %d", last.StatusCode)
 	}
 }
 
@@ -983,8 +983,8 @@ func TestRecordQueuePublishWithEmptyTopicOmitsAttrs(t *testing.T) {
 	}
 	// EventAttrs should be nil when topic is empty.
 	last := events[len(events)-1]
-	if last.EventAttrs != nil {
-		if m, ok := last.EventAttrs.(map[string]interface{}); ok {
+	if last.Attributes != nil {
+		if m, ok := last.Attributes.(map[string]interface{}); ok {
 			if _, exists := m["topic"]; exists {
 				t.Fatal("expected no 'topic' attr when topic is empty")
 			}

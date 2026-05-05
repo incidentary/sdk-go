@@ -218,7 +218,7 @@ func TestTransportPausesAfterFreeCELimit(t *testing.T) {
 		ServiceID:  "svc",
 		WallTsNs:   time.Now().UnixNano(),
 		Kind:       incidentary.KindHTTPIn,
-		Status:     200,
+		StatusCode: 200,
 		DurationNs: 1000,
 	}
 
@@ -238,11 +238,10 @@ func TestTransportPausesAfterFreeCELimit(t *testing.T) {
 func TestRecordEventWrappersEmitQueueJobWebhookVocabulary(t *testing.T) {
 	type eventRow struct {
 		EventType  string                 `json:"event_type"`
-		EventClass string                 `json:"event_class"`
 		Kind       string                 `json:"kind"`
-		Status     int                    `json:"status"`
-		ParentCeID *string                `json:"parent_ce_id"`
-		EventAttrs map[string]interface{} `json:"event_attrs"`
+		StatusCode int                    `json:"status_code"`
+		ParentID   *string                `json:"parent_id"`
+		Attributes map[string]interface{} `json:"attributes"`
 	}
 	type ingestBatch struct {
 		Events []eventRow `json:"events"`
@@ -315,29 +314,26 @@ func TestRecordEventWrappersEmitQueueJobWebhookVocabulary(t *testing.T) {
 			if !ok {
 				t.Fatalf("missing event_type %s", eventType)
 			}
-			if ev.EventClass != "causal" {
-				t.Fatalf("expected event_class causal for %s, got %s", eventType, ev.EventClass)
-			}
 			if ev.Kind != expectedKind {
 				t.Fatalf("expected kind %s for %s, got %s", expectedKind, eventType, ev.Kind)
 			}
-			if ev.Status != expectedStatus {
-				t.Fatalf("expected status %d for %s, got %d", expectedStatus, eventType, ev.Status)
+			if ev.StatusCode != expectedStatus {
+				t.Fatalf("expected status_code %d for %s, got %d", expectedStatus, eventType, ev.StatusCode)
 			}
 		}
 
 		assertEvent("queue_publish", "QUEUE_PUBLISH", 0)
 		assertEvent("queue_consume", "QUEUE_CONSUME", 0)
-		assertEvent("job_start", "INTERNAL", 0)
-		assertEvent("job_end", "INTERNAL", 0)
-		assertEvent("webhook_in", "HTTP_IN", 200)
-		assertEvent("webhook_out", "HTTP_OUT", 202)
+		assertEvent("job_start", "JOB", 0)
+		assertEvent("job_end", "JOB", 0)
+		assertEvent("webhook_in", "HTTP_SERVER", 200)
+		assertEvent("webhook_out", "HTTP_CLIENT", 202)
 
-		if byType["job_start"].ParentCeID == nil || *byType["job_start"].ParentCeID != "ce-parent" {
-			t.Fatalf("expected job_start parent_ce_id to be ce-parent")
+		if byType["job_start"].ParentID == nil || *byType["job_start"].ParentID != "ce-parent" {
+			t.Fatalf("expected job_start parent_id to be ce-parent")
 		}
-		if byType["webhook_out"].EventAttrs["endpoint"] != "payments" {
-			t.Fatalf("expected webhook_out event_attrs endpoint to be payments")
+		if byType["webhook_out"].Attributes["endpoint"] != "payments" {
+			t.Fatalf("expected webhook_out attributes endpoint to be payments")
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatalf("timed out waiting for ingest batch")

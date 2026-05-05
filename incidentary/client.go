@@ -3,6 +3,7 @@ package incidentary
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,11 +35,11 @@ type Client struct {
 	triggerEngine *TriggerEngine
 	monoOrigin    time.Time
 
-	preArmStartedAt   int64
-	preArmTimer       *time.Timer
-	lastPreArmEndedAt int64
-	preArmWindowSeq   uint64
-	preArmAlertedAtNs int64
+	preArmStartedAt     int64
+	preArmTimer         *time.Timer
+	lastPreArmEndedAt   int64
+	preArmWindowSeq     uint64
+	preArmAlertedAtNs   int64
 	preArmRingBufferSeq int64
 
 	activePreArmWindow     *PreArmWindow
@@ -493,6 +494,72 @@ func (c *Client) TraceCapDroppedTotal() int64 {
 	return c.traceCapDroppedTotal.Load()
 }
 
+// updateFlushLatency feeds a flush round-trip duration (ms) into the
+// adaptive batch sizer. EMA-smoothed (alpha=0.3); steers the next
+// batch size up or down based on how close the EMA is to the
+// max_flush_overhead_ms ceiling.
+func (c *Client) updateFlushLatency(latencyMs float64) {
+	const alpha = 0.3
+	const minBatchSize = 10
+	const maxBatchSize = 5_000
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// First sample seeds the EMA. -1 sentinel means uninitialized.
+	if c.flushLatencyEma < 0 {
+		c.flushLatencyEma = latencyMs
+	} else {
+		c.flushLatencyEma = alpha*latencyMs + (1.0-alpha)*c.flushLatencyEma
+	}
+
+	ceiling := float64(c.maxFlushOverheadMs)
+	if c.flushLatencyEma < ceiling*0.5 {
+		// Comfortably under the ceiling — grow batch by 20 %.
+		next := int(float64(c.currentBatchSize) * 1.2)
+		if next > maxBatchSize {
+			next = maxBatchSize
+		}
+		c.currentBatchSize = next
+	} else if c.flushLatencyEma > ceiling*0.9 {
+		// Pressed up against the ceiling — shrink batch by 30 %.
+		next := int(float64(c.currentBatchSize) * 0.7)
+		if next < minBatchSize {
+			next = minBatchSize
+		}
+		c.currentBatchSize = next
+	}
+	// Middle range: leave size unchanged.
+}
+
+// ShouldFlushNow returns true if the ring buffer has at least
+// currentBatchSize entries — caller can use this to trigger an
+// early flush between scheduled intervals.
+func (c *Client) ShouldFlushNow() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.buffer.mu.Lock()
+	count := c.buffer.count
+	c.buffer.mu.Unlock()
+	return count >= c.currentBatchSize
+}
+
+// GetCurrentBatchSize returns the adaptive batch size currently in
+// effect. Useful for telemetry / debugging.
+func (c *Client) GetCurrentBatchSize() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.currentBatchSize
+}
+
+// GetFlushLatencyEma returns the EMA of flush round-trip latency in
+// milliseconds. -1 means uninitialized (no flushes have completed yet).
+func (c *Client) GetFlushLatencyEma() float64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.flushLatencyEma
+}
+
 // FlushToBackend flushes ring-buffer content through a transport.
 func (c *Client) FlushToBackend(transport *Transport) {
 	defer func() { _ = recover() }()
@@ -506,9 +573,23 @@ func (c *Client) FlushToBackend(transport *Transport) {
 	c.mu.Lock()
 	batch := c.annotateBufferedEventsLocked(c.buffer.Flush(time.Now().UnixMilli()))
 	mode := c.GetMode()
+	telemetry := map[string]interface{}{
+		"flush_latency_ema_ms": c.flushLatencyEma,
+		"current_batch_size":   c.currentBatchSize,
+	}
 	c.mu.Unlock()
 
-	transport.UploadBatchWithMode(batch, mode, "")
+	transport.UploadBatchWithModeAndTelemetry(batch, mode, "", telemetry, func(result FlushResult) {
+		// EMA + capture-mode signal arrive after the round trip.
+		// updateFlushLatency takes its own lock — do not nest.
+		c.updateFlushLatency(result.LatencyMs)
+		if result.RequestedCaptureMode != "" {
+			log.Printf(
+				`{"event":"incidentary_flush_capture_mode_requested","mode":%q}`,
+				result.RequestedCaptureMode,
+			)
+		}
+	})
 }
 
 func (c *Client) annotateBufferedEventsLocked(events []*SkeletonCe) []*SkeletonCe {

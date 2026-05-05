@@ -43,8 +43,7 @@ func TestWrapLambdaHandlerFlushCalledOnSuccess(t *testing.T) {
 		ServiceID:  "test-service",
 		WallTsNs:   1_000_000_000,
 		Kind:       KindHTTPIn,
-		Status:     200,
-		SdkVersion: sdkVersion,
+		StatusCode: 200,
 	})
 
 	handler := func(ctx context.Context, event json.RawMessage) (interface{}, error) {
@@ -77,8 +76,7 @@ func TestWrapLambdaHandlerFlushCalledOnError(t *testing.T) {
 		ServiceID:  "test-service",
 		WallTsNs:   1_000_000_000,
 		Kind:       KindHTTPIn,
-		Status:     500,
-		SdkVersion: sdkVersion,
+		StatusCode: 500,
 	})
 
 	handlerErr := errors.New("lambda handler failed")

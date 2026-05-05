@@ -88,14 +88,12 @@ func RecordGRPCCall(ctx context.Context, client *Client, kind CeKind, method str
 		WallTsNs:   startTime.UnixNano(),
 		Kind:       kind,
 		EventType:  string(eventType),
-		EventClass: "causal",
-		Status:     status,
+		StatusCode: status,
 		DurationNs: duration.Nanoseconds(),
-		SdkVersion: sdkVersion,
 	}
 
 	if method != "" {
-		ce.EventAttrs = map[string]interface{}{"method": method}
+		ce.Attributes = map[string]interface{}{"method": method}
 	}
 
 	client.WriteEvent(ce)
