@@ -52,6 +52,16 @@ type Client struct {
 	detailRequestHeaderAllowlist  []string
 	detailResponseHeaderAllowlist []string
 	redactionFields               map[string]struct{}
+
+	// Adaptive batch sizing state.
+	flushLatencyEma    float64 // EMA of flush round-trip latency in ms; -1 = uninitialized
+	currentBatchSize   int     // current adaptive batch size threshold
+	maxFlushOverheadMs int64   // target ceiling for flush latency in ms
+
+	// L1 trace cap — drops bytes before they hit the buffer when a single
+	// service emits a runaway trace. Spec at docs/specs/l1-trace-cap.md.
+	traceCap             *TraceCap
+	traceCapDroppedTotal atomic.Int64
 }
 
 // Config holds client configuration.
@@ -108,6 +118,16 @@ type Config struct {
 	// When nil, DefaultIntegrations() is used. Pass an explicit empty slice to
 	// disable all default integrations.
 	Integrations []Integration
+
+	// MaxFlushOverheadMs is the target ceiling for flush round-trip latency
+	// in milliseconds. The adaptive batch sizer uses this to decide whether
+	// to grow or shrink the batch. Default: 100.
+	MaxFlushOverheadMs int64
+
+	// TraceCapEnabled controls the L1 per-trace span cap (5K/50K/500K).
+	// Default: true. Disable only for legitimate large-trace use cases
+	// (batch jobs, internal benchmarks). See docs/specs/l1-trace-cap.md.
+	TraceCapEnabled bool
 }
 
 func DefaultConfig(apiKey, serviceName string) Config {
@@ -157,6 +177,9 @@ func DefaultConfig(apiKey, serviceName string) Config {
 		PreArmDetailRequestHeaderAllowlist:  append([]string{}, defaultRequestHeaderAllowlist...),
 		PreArmDetailResponseHeaderAllowlist: append([]string{}, defaultResponseHeaderAllowlist...),
 		RedactFields:                        append([]string{}, defaultRedactFields...),
+
+		MaxFlushOverheadMs: 100,
+		TraceCapEnabled:    true,
 	}
 }
 
@@ -238,7 +261,17 @@ func New(cfg Config) *Client {
 		detailRequestHeaderAllowlist:  normalizeHeaderAllowlist(cfg.PreArmDetailRequestHeaderAllowlist),
 		detailResponseHeaderAllowlist: normalizeHeaderAllowlist(cfg.PreArmDetailResponseHeaderAllowlist),
 		redactionFields:               toStringSet(cfg.RedactFields),
+		flushLatencyEma:               -1,
+		currentBatchSize:              100,
+		maxFlushOverheadMs:            cfg.MaxFlushOverheadMs,
 	}
+	if client.maxFlushOverheadMs <= 0 {
+		client.maxFlushOverheadMs = 100
+	}
+	client.traceCap = NewTraceCap(TraceCapOptions{
+		ServiceID: cfg.ServiceName,
+		Enabled:   cfg.TraceCapEnabled,
+	})
 	client.mode.Store(string(ModeNormal))
 
 	integrations := cfg.Integrations
@@ -386,11 +419,9 @@ func (c *Client) RecordEvent(eventType IncidentaryEventType, opts RecordEventOpt
 		WallTsNs:   wallTsNs,
 		Kind:       c.eventTypeToKind(eventType),
 		EventType:  string(eventType),
-		EventClass: "causal",
-		EventAttrs: opts.EventAttrs,
-		Status:     status,
+		Attributes: opts.EventAttrs,
+		StatusCode: status,
 		DurationNs: maxInt64(0, opts.DurationNs),
-		SdkVersion: "0.2.0",
 	}
 	c.WriteEvent(ce)
 }
@@ -425,9 +456,41 @@ func (c *Client) WriteEvent(ce *SkeletonCe) {
 	if ce == nil {
 		return
 	}
+
+	verdict := c.traceCap.Observe(ce.TraceID)
+	if verdict.ShouldDrop {
+		c.traceCapDroppedTotal.Add(1)
+		return
+	}
+	if verdict.Tier == VerdictTierTruncating {
+		// Boundary span — mark it so downstream UIs can show the
+		// truncation point. All later spans for this trace drop
+		// before reaching this method.
+		attrs, _ := ce.Attributes.(map[string]any)
+		if attrs == nil {
+			attrs = map[string]any{}
+		}
+		attrs["incidentary.trace.truncated_in_sdk"] = true
+		ce.Attributes = attrs
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.buffer.Write(ce)
+}
+
+// RegisterTraceCapHook installs a callback invoked at most once per
+// (trace_id, tier) when the L1 trace cap detects a runaway trace in
+// this client. Useful for routing the structured signal into the
+// customer's existing observability pipeline.
+func (c *Client) RegisterTraceCapHook(hook TraceCapHook) {
+	c.traceCap.SetHook(hook)
+}
+
+// TraceCapDroppedTotal returns the cumulative count of spans dropped at
+// L1 by this client.
+func (c *Client) TraceCapDroppedTotal() int64 {
+	return c.traceCapDroppedTotal.Load()
 }
 
 // FlushToBackend flushes ring-buffer content through a transport.
@@ -790,7 +853,11 @@ func (c *Client) eventTypeToKind(eventType IncidentaryEventType) CeKind {
 		return KindQueuePublish
 	case EventQueueConsume:
 		return KindQueueConsume
-	case EventDBQuery, EventJobStart, EventJobEnd, EventInternalTask:
+	case EventDBQuery:
+		return KindDBQuery
+	case EventJobStart, EventJobEnd:
+		return KindJob
+	case EventInternalTask:
 		return KindInternal
 	default:
 		return KindInternal
